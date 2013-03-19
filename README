@@ -1,20 +1,12 @@
-PUBLIC ANNOUNCEMENT!
+Requirements
 ====================
-THERE IS A BETTER REPLACEMENT FOR THIS!
-
-Since not so long ago there is a very good toolchain available that replaces summon-arm-toolchain. Is better tested and there are more people working on it.
-
-Consider visiting:
-
+A working ARM compiler, such as:
 https://launchpad.net/gcc-arm-embedded
-
-REMEMBER!
-=========
-THE RESULTING TOOLCHAIN IS FOR BARE BONE ARM PROCESSOR SOFTWARE. NOT FOR USE
-WITH GLIBC OR THE LINUX KERNEL. DO NOT EVEN BOTHER TO ASK FOR THAT!
 
 Contact
 =======
+Contacting the summon-arm-toolchain folks is probably best for now.
+
 You can find developers and users of this script on freenode IRC network in
 #summon-arm-toolchain channel. Feel free to join us and ask questions.
 
@@ -73,11 +65,11 @@ QUIET=
 By default set to 0. To decrease console output (may increase compile speed
 in some cases) you can set this variable to 1.
 
-USE_LINARO=
------------
+DEBUG=
+------
 
-By default set to 1. To disable the usage of the Linaro GCC and use of the
-vanilla GCC instead set to 0.
+Defaults to 0, no debug information. 1 some echo commands.
+2 echo on for all commands. 3 echo and expand all variables.
 
 OOCD_EN=
 --------
@@ -115,7 +107,7 @@ the script.
 Example:
 --------
 
-  $ ./summon-arm-toolchain LIBSTM32_EN=1 CPUS=5
+  $ ./summon-arm-libraries LIBSTM32_EN=1 CPUS=5
 
 This will run the script with libstm32 enabled and with 5 CPUs on your host
 machine resulting in calling all make commands with -j6.
@@ -181,9 +173,7 @@ You can list available combinations by running:
 
 Known Bugs:
 ===========
-- linaro gcc compilation exits without an apparent error
-  Sometimes the compilation of GCC exits without any error, RERUNNING the sat
-  script manages to compile a working gcc though.
+
 
 Stable tarball downloads and GIT cloning
 ========================================
