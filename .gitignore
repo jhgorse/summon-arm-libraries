@@ -3,3 +3,8 @@ scratch
 stamps
 .DS_Store
 build
+build.log
+install
+libcmsis*
+libstm*
+openocd*

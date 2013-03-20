@@ -20,18 +20,20 @@ set -e
 # You can also pass them as parameters to the script
 ##############################################################################
 TARGET=arm-none-eabi		# Or: TARGET=arm-elf
-#PREFIX=/Users/jhg/toolchain-gcc-arm-none-eabi-4_7-2012q4-20121208-mac	# Install location of your final toolchain
-PREFIX=/Users/jhg/tmp	# Install location of your final toolchain
-#dry run...
+PREFIX=/Users/jhg/toolchain-gcc-arm-none-eabi-4_7-2012q4-20121208-mac	# Install location of your final toolchain
 
-DARWIN_OPT_PATH=/usr/local	# Path in which MacPorts or Fink is installed
+# Install into SUMMON_DIR/install while still pointing at the right 
+# PREFIX for build.
+DRYRUN=1
+
+DARWIN_OPT_PATH=/usr/local	# Path in which Homebrew, MacPorts, or Fink is installed
 # Set to 'sudo' if you need superuser privileges while installing
 SUDO=
 # Set to 1 to be quieter while running
 QUIET=0
 # Debug 0 - OFF, 1 - Extra logging at important steps, 
 # 		2 - Show all commands as they are run, 3 - Expand variables
-DEBUG=3
+DEBUG=2
 # Set to 1 to use linaro gcc instead of the FSF gcc
 USE_LINARO=0
 # Set to 1 to enable building of OpenOCD
@@ -69,6 +71,9 @@ while [ $# -gt 0 ]; do
 		;;
 		SUDO=*)
 		SUDO=$(echo $1 | sed 's,^SUDO=,,')
+		;;
+		DRYRUN=*)
+		DRYRUN=$(echo $1 | sed 's,^DRYRUN=,,')
 		;;
 		QUIET=*)
 		QUIET=$(echo $1 | sed 's,^QUIET=,,')
@@ -108,6 +113,7 @@ echo "TARGET=$TARGET"
 echo "PREFIX=$PREFIX"
 echo "DARWIN_OPT_PATH=$DARWIN_OPT_PATH"
 echo "SUDO=$SUDO"
+echo "DRYRUN=$DRYRUN"
 echo "QUIET=$QUIET"
 echo "DEBUG=$DEBUG"
 echo "OOCD_EN=$OOCD_EN"
@@ -150,7 +156,7 @@ case "${DEBUG}" in
 	;;
 	2)
 	echo "Going DEBUG level 2 (set -v) to echo commands as run."
-	set +x -v
+	set -x +v
 	;;
 	1)
 	echo "Going DEBUG level 1 to echo the output of select commands as run."
@@ -193,15 +199,15 @@ fi
 
 # Pull in the local configuration, if any
 if [ -f local.sh ]; then
-    . ./local.sh
+	. ./local.sh
 fi
 
 MAKEFLAGS=${PARALLEL}
 TARFLAGS=v
 
 if [ ${QUIET} != 0 ]; then
-    TARFLAGS=
-    MAKEFLAGS="${MAKEFLAGS} -s"
+	TARFLAGS=
+	MAKEFLAGS="${MAKEFLAGS} -s"
 fi
 
 export PATH="${PREFIX}/bin:${PATH}"
@@ -209,7 +215,6 @@ export PATH="${PREFIX}/bin:${PATH}"
 SUMMON_DIR=$(pwd)
 SOURCES=${SUMMON_DIR}/sources
 STAMPS=${SUMMON_DIR}/stamps
-
 
 ##############################################################################
 # Tool section
@@ -228,10 +233,10 @@ case "$(uname)" in
 	Darwin)
 	echo "Found Darwin OS."
 	GCCFLAGS="${GCCFLAGS} \
-                  --with-gmp=${DARWIN_OPT_PATH} \
-	          --with-mpfr=${DARWIN_OPT_PATH} \
-	          --with-mpc=${DARWIN_OPT_PATH} \
-		  --with-libiconv-prefix=${DARWIN_OPT_PATH}"
+			--with-gmp=${DARWIN_OPT_PATH} \
+			--with-mpfr=${DARWIN_OPT_PATH} \
+			--with-mpc=${DARWIN_OPT_PATH} \
+			--with-libiconv-prefix=${DARWIN_OPT_PATH}"
 	OOCD_CFLAGS="-I${DARWIN_OPT_PATH}/include"
 	OOCD_LDFLAGS="-L${DARWIN_OPT_PATH}/lib"
 	if gcc --version | grep llvm-gcc > /dev/null ; then
@@ -255,91 +260,94 @@ esac
 
 # Fetch a versioned file from a URL
 function fetch {
-    if [[ ! -e ${STAMPS}/$1.fetch ]]; then
-        if [[ ! -e ${SOURCES}/$1 ]]; then
-            log "Downloading $1 sources..."
-	    wget -c ${FETCH_NO_PASSIVE} ${FETCH_NO_CERTCHECK} $2 && touch ${STAMPS}/$1.fetch
-        fi
-    fi
+	if [[ ! -e ${STAMPS}/$1.fetch ]]; then
+		if [[ ! -e ${SOURCES}/$1 ]]; then
+			log "Downloading $1 sources..."
+		wget -c ${FETCH_NO_PASSIVE} ${FETCH_NO_CERTCHECK} $2 && touch ${STAMPS}/$1.fetch
+		fi
+	fi
 }
 
 function clone {
-    local NAME=$1
-    local GIT_REF=$2
-    local GIT_URL=$3
-    local POST_CLONE=$4
-    local GIT_SHA=$(git ls-remote ${GIT_URL} ${GIT_REF} | cut -f 1)
+	local NAME=$1
+	local GIT_REF=$2
+	local GIT_URL=$3
+	local POST_CLONE=$4
+	local GIT_SHA=$(git ls-remote ${GIT_URL} ${GIT_REF} | cut -f 1)
 
-    # It seems that the ref is actually a SHA as it could not be found through ls-remote
-    if [[ "x${GIT_SHA}" == "x" ]]; then
-        local GIT_SHA=${GIT_REF}
-    fi
+	# It seems that the ref is actually a SHA as it could not be found through ls-remote
+	if [[ "x${GIT_SHA}" == "x" ]]; then
+		local GIT_SHA=${GIT_REF}
+	fi
 
-    # Setting uppercase NAME variable for future use to the source file name
-    eval $(echo ${NAME} | tr "[:lower:]" "[:upper:]")=${NAME}-${GIT_SHA}
+	# Setting uppercase NAME variable for future use to the source file name
+	eval $(echo ${NAME} | tr "[:lower:]" "[:upper:]")=${NAME}-${GIT_SHA}
 
-    # Clone the repository and do all necessary operations until we get an archive
-    if [[ ! -e ${STAMPS}/${NAME}-${GIT_SHA}.fetch ]]; then
-        # Making sure there is nothing in our way
-        if [[ -e ${NAME}-${GIT_SHA} ]]; then
-            log "The clone directory ${NAME}-${GIT_SHA} already exists, removing..."
-            rm -rf ${NAME}-${GIT_SHA}
-        fi
-        log "Cloning ${NAME}-${GIT_SHA} ..."
-        git clone ${GIT_URL} ${NAME}-${GIT_SHA}
-        cd ${NAME}-${GIT_SHA}
-        log "Checking out the revision ${GIT_REF} with the SHA ${GIT_SHA} ..."
-        git checkout -b sat-branch ${GIT_SHA}
+	# Clone the repository and do all necessary operations until we get an archive
+	if [[ ! -e ${STAMPS}/${NAME}-${GIT_SHA}.fetch ]]; then
+		# Making sure there is nothing in our way
+		if [[ -e ${NAME}-${GIT_SHA} ]]; then
+			log "The clone directory ${NAME}-${GIT_SHA} already exists, removing..."
+			rm -rf ${NAME}-${GIT_SHA}
+		fi
+		log "Cloning ${NAME}-${GIT_SHA} ..."
+		git clone ${GIT_URL} ${NAME}-${GIT_SHA}
+		cd ${NAME}-${GIT_SHA}
+		log "Checking out the revision ${GIT_REF} with the SHA ${GIT_SHA} ..."
+		git checkout -b sat-branch ${GIT_SHA}
 	if [[ "x${POST_CLONE}" != "x" ]]; then
 		log "Running post clone code for ${NAME}-${GIT_SHA} ..."
 		${POST_CLONE}
 	fi
-        log "Removing .git directory from ${NAME}-${GIT_SHA} ..."
-        rm -rf .git
-        cd ..
-        log "Generating source archive for ${NAME}-${GIT_SHA} ..."
-        tar cfj ${SOURCES}/${NAME}-${GIT_SHA}.tar.bz2 ${NAME}-${GIT_SHA}
-        rm -rf ${NAME}-${GIT_SHA}
-        touch ${STAMPS}/${NAME}-${GIT_SHA}.fetch
-    fi
+		log "Removing .git directory from ${NAME}-${GIT_SHA} ..."
+		rm -rf .git
+		cd ..
+		log "Generating source archive for ${NAME}-${GIT_SHA} ..."
+		tar cfj ${SOURCES}/${NAME}-${GIT_SHA}.tar.bz2 ${NAME}-${GIT_SHA}
+		rm -rf ${NAME}-${GIT_SHA}
+		touch ${STAMPS}/${NAME}-${GIT_SHA}.fetch
+	fi
 }
 
 # Log a message out to the console
 function log {
-    echo "******************************************************************"
-    echo "* $*"
-    echo "******************************************************************"
+	echo "******************************************************************"
+	echo "* $*"
+	echo "******************************************************************"
 }
 
 # Unpack an archive
 function unpack {
-    log Unpacking $*
-    # Use 'auto' mode decompression.  Replace with a switch if tar doesn't support -a
-    ARCHIVE=$(ls ${SOURCES}/$1.tar.*)
-    case ${ARCHIVE} in
+	log Unpacking $*
+	# Use 'auto' mode decompression. Replace with a switch if tar doesn't support -a
+	ARCHIVE=$(ls ${SOURCES}/$1.tar.*)
+	case ${ARCHIVE} in
 	*.bz2)
-	    echo "archive type bz2"
-	    TYPE=j
-	    ;;
+		echo "archive type bz2"
+		TYPE=j
+		;;
 	*.gz)
-	    echo "archive type gz"
-	    TYPE=z
-	    ;;
+		echo "archive type gz"
+		TYPE=z
+		;;
 	*)
-	    echo "Unknown archive type of $1"
-	    echo ${ARCHIVE}
-	    exit 1
-	    ;;
-    esac
-    ${TAR} xf${TYPE}${TARFLAGS} ${SOURCES}/$1.tar.*
+		echo "Unknown archive type of $1"
+		echo ${ARCHIVE}
+		exit 1
+		;;
+	esac
+	${TAR} xf${TYPE}${TARFLAGS} ${SOURCES}/$1.tar.*
 }
 
 # Install a build
 function install {
-    log $1
-    ${SUDO} make ${MAKEFLAGS} $2 $3 $4 $5 $6 $7 $8
+	log $1
+	if [[ $DRYRUN == 1 ]]; then	# Install into the summon directory
+		$(echo ${SUDO} make ${MAKEFLAGS} $2 $3 $4 $5 $6 $7 $8 | sed "s,$PREFIX,$SUMMON_DIR/install,")
+	else
+		${SUDO} make ${MAKEFLAGS} $2 $3 $4 $5 $6 $7 $8
+	fi
 }
-
 
 mkdir -p ${STAMPS} ${SOURCES} build.log
 
@@ -397,24 +405,24 @@ fi
 cd ${SUMMON_DIR}
 
 if [[ ! -e build ]]; then
-    mkdir build
+	mkdir build
 fi
 
 if [[ ${OOCD_EN} != 0 ]]; then
 if [[ ! -e ${STAMPS}/${OOCD}.build ]]; then
-    unpack ${OOCD}
-    log "Patching openocd to support arm7m registers"
-    cd ${OOCD}
-    patch -p1 -i ../patches/patch-openocd-arm7m-registers.diff
-    cd ..
-    cd build
-    log "Configuring openocd-${OOCD}"
+	unpack ${OOCD}
+	log "Patching openocd to support arm7m registers"
+	cd ${OOCD}
+	patch -p1 -i ../patches/patch-openocd-arm7m-registers.diff
+	cd ..
+	cd build
+	log "Configuring openocd-${OOCD}"
 	if [[ ${DEBUG} -ge 1 ]] ; then
 		echo "DEBUG OUTPUT: Configuring openocd of summon-arm-toolchain"
 		echo "From PWD=$PWD"
 		echo "CFLAGS=\"${CFLAGS} ${OOCD_CFLAGS}\" \\
-LDFLAGS=\"${LDFLAGS} ${OOCD_LDFLAGS}\" \\
-../${OOCD}/configure --enable-maintainer-mode \\
+			LDFLAGS=\"${LDFLAGS} ${OOCD_LDFLAGS}\" \\
+			../${OOCD}/configure --enable-maintainer-mode \\
 		--disable-option-checking \\
 		--disable-werror \\
 		--prefix=${PREFIX} \\
@@ -431,9 +439,9 @@ LDFLAGS=\"${LDFLAGS} ${OOCD_LDFLAGS}\" \\
 		--enable-arm-jtag-ew \\
 		--enable-stlink"
 	fi
-    CFLAGS="${CFLAGS} ${OOCD_CFLAGS}" \
-    LDFLAGS="${LDFLAGS} ${OOCD_LDFLAGS}" \
-    ../${OOCD}/configure --enable-maintainer-mode \
+	CFLAGS="${CFLAGS} ${OOCD_CFLAGS}" \
+	LDFLAGS="${LDFLAGS} ${OOCD_LDFLAGS}" \
+	../${OOCD}/configure --enable-maintainer-mode \
 				 --disable-option-checking \
 				 --disable-werror \
 				 --prefix=${PREFIX} \
@@ -449,100 +457,101 @@ LDFLAGS=\"${LDFLAGS} ${OOCD_LDFLAGS}\" \\
 				 --enable-rlink \
 				 --enable-arm-jtag-ew \
 				 --enable-stlink
-    log "Building ${OOCD}"
-    if [[ ${DEBUG} -ge 1 ]] ; then
+	log "Building ${OOCD}"
+	if [[ ${DEBUG} -ge 1 ]] ; then
 		echo "DEBUG OUTPUT: Building openocd of summon-arm-toolchain"
 		echo "From PWD=$PWD"
 		echo "make ${MAKEFLAGS}"
 	fi
-    make ${MAKEFLAGS}
-    install ${OOCD} install
-    cd ..
-    log "Cleaning up ${OOCD}"
-    touch ${STAMPS}/${OOCD}.build
-    mkdir -p build.log/${OOCD}
-    mv build/* build.log/${OOCD}/
+	make ${MAKEFLAGS}
+	install ${OOCD} install
+	cd ..
+	log "Cleaning up ${OOCD}"
+	touch ${STAMPS}/${OOCD}.build
+	mkdir -p build.log/${OOCD}
+	mv build/* build.log/${OOCD}/
 fi
 fi
 
 if [[ ${LIBSTM32_EN} != 0 ]]; then
 if [[ ! -e ${STAMPS}/${LIBCMSIS}.build ]]; then
-    unpack ${LIBCMSIS}
-    cd ${LIBCMSIS}
-    log "Building ${LIBCMSIS}"
-    if [[ ${DEBUG} -ge 1 ]] ; then
+	unpack ${LIBCMSIS}
+	cd ${LIBCMSIS}
+	log "Building ${LIBCMSIS}"
+	if [[ ${DEBUG} -ge 1 ]] ; then
 		echo "DEBUG OUTPUT: Building LIBCMSIS of summon-arm-toolchain"
 		echo "From PWD=$PWD"
 		echo "make arch_prefix=${TARGET} prefix=${PREFIX}"
 		echo "install ${LIBCMSIS} arch_prefix=${TARGET} prefix=${PREFIX} install"
 	fi
-    make arch_prefix=${TARGET} prefix=${PREFIX}
-    install ${LIBCMSIS} arch_prefix=${TARGET} prefix=${PREFIX} install
-    cd ..
-    log "Cleaning up ${LIBCMSIS}"
-    touch ${STAMPS}/${LIBCMSIS}.build
-    mv ${LIBCMSIS} build.log/${LIBCMSIS}
-    ln -s build.log/${LIBCMSIS}
-#    rm -rf ${LIBCMSIS}
+	make arch_prefix=${TARGET} prefix=${PREFIX}
+	install ${LIBCMSIS} arch_prefix=${TARGET} prefix=${PREFIX} install
+	cd ..
+	echo "Quitting the trial."
+	exit 1
+	log "Cleaning up ${LIBCMSIS}"
+	touch ${STAMPS}/${LIBCMSIS}.build
+	mv ${LIBCMSIS} build.log/
+#	rm -rf ${LIBCMSIS}
 fi
 
 if [[ ! -e ${STAMPS}/${LIBSTM32}.build ]]; then
-    unpack ${LIBSTM32}
-    cd ${LIBSTM32}
-    log "Building ${LIBSTM32}"
-    if [[ ${DEBUG} -ge 1 ]] ; then
+	unpack ${LIBSTM32}
+	cd ${LIBSTM32}
+	log "Building ${LIBSTM32}"
+	if [[ ${DEBUG} -ge 1 ]] ; then
 		echo "DEBUG OUTPUT: Building LIBSTM32 of summon-arm-toolchain"
 		echo "From PWD=$PWD"
 		echo "make arch_prefix=${TARGET} prefix=${PREFIX}"
 		echo "install ${LIBSTM32} arch_prefix=${TARGET} prefix=${PREFIX} install"
 		echo "CFLAGS=$CFLAGS"
 	fi
-    make arch_prefix=${TARGET} prefix=${PREFIX}
-    install ${LIBSTM32} arch_prefix=${TARGET} prefix=${PREFIX} install
-    cd ..
-    log "Cleaning up ${LIBSTM32}"
-    touch ${STAMPS}/${LIBSTM32}.build
-    mv ${LIBSTM32} build.log/${LIBSTM32}
-#    rm -rf ${LIBSTM32}
+	make arch_prefix=${TARGET} prefix=${PREFIX}
+	#install ${LIBSTM32} arch_prefix=${TARGET} prefix=${PREFIX} install
+	cd ..
+	log "Cleaning up ${LIBSTM32}"
+	touch ${STAMPS}/${LIBSTM32}.build
+	mv ${LIBSTM32} build.log/
+#	rm -rf ${LIBSTM32}
 fi
 
 if [[ ! -e ${STAMPS}/${LIBSTM32USB}.build ]]; then
-    unpack ${LIBSTM32USB}
-    cd ${LIBSTM32USB}
-    log "Building ${LIBSTM32USB}"
-    if [[ ${DEBUG} -ge 1 ]] ; then
+	unpack ${LIBSTM32USB}
+	cd ${LIBSTM32USB}
+	log "Building ${LIBSTM32USB}"
+	if [[ ${DEBUG} -ge 1 ]] ; then
 		echo "DEBUG OUTPUT: Building LIBSTM32USB of summon-arm-toolchain"
 		echo "From PWD=$PWD"
 		echo "make arch_prefix=${TARGET} prefix=${PREFIX}"
 		echo "install ${LIBSTM32USB} arch_prefix=${TARGET} prefix=${PREFIX} install"
 	fi
-    make arch_prefix=${TARGET} prefix=${PREFIX}
-    install ${LIBSTM32USB} arch_prefix=${TARGET} prefix=${PREFIX} install
-    cd ..
-    log "Cleaning up ${LIBSTM32USB}"
-    touch ${STAMPS}/${LIBSTM32USB}.build
-    mv ${LIBSTM32USB} build.log/${LIBSTM32USB}
-#    rm -rf ${LIBSTM32USB}
+	make arch_prefix=${TARGET} prefix=${PREFIX}
+	#install ${LIBSTM32USB} arch_prefix=${TARGET} prefix=${PREFIX} install
+	cd ..
+	log "Cleaning up ${LIBSTM32USB}"
+	touch ${STAMPS}/${LIBSTM32USB}.build
+	mv ${LIBSTM32USB} build.log/
+#	rm -rf ${LIBSTM32USB}
 fi
 fi
 
 if [[ $LIBOPENCM3_EN != 0 ]]; then
 if [[ ! -e ${STAMPS}/${LIBOPENCM3}.build ]]; then
-    unpack ${LIBOPENCM3}
-    cd ${LIBOPENCM3}
-    log "Building ${LIBOPENCM3}"
-    if [[ ${DEBUG} -ge 1 ]] ; then
+	unpack ${LIBOPENCM3}
+	cd ${LIBOPENCM3}
+	log "Building ${LIBOPENCM3}"
+	if [[ ${DEBUG} -ge 1 ]] ; then
 		echo "DEBUG OUTPUT: Building LIBOPENCM3 of summon-arm-toolchain"
 		echo "From PWD=$PWD"
 		echo "make PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX}"
 		echo "install ${LIBOPENCM3} PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX} install"
 	fi
-    make PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX}
-    install ${LIBOPENCM3} PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX} install
-    cd ..
-    log "Cleaning up ${LIBOPENCM3}"
-    touch ${STAMPS}/${LIBOPENCM3}.build
-    mv ${LIBOPENCM3} build.log/${LIBOPENCM3}
-#    rm -rf ${LIBOPENCM3}
+	make PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX}
+	#install ${LIBOPENCM3} PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX} install
+	cd ..
+	log "Cleaning up ${LIBOPENCM3}"
+	touch ${STAMPS}/${LIBOPENCM3}.build
+	mv ${LIBOPENCM3} build.log/
+#	rm -rf ${LIBOPENCM3}
 fi
 fi
