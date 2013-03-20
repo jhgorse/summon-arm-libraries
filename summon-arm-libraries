@@ -22,7 +22,7 @@ set -e
 TARGET=arm-none-eabi		# Or: TARGET=arm-elf
 PREFIX=/Users/jhg/toolchain-gcc-arm-none-eabi-4_7-2012q4-20121208-mac	# Install location of your final toolchain
 
-# Install into SUMMON_DIR/install while still pointing at the right 
+# Install into the Summon-ARM-Libraries install directory while still pointing at the right 
 # PREFIX for build.
 DRYRUN=1
 
@@ -33,9 +33,7 @@ SUDO=
 QUIET=0
 # Debug 0 - OFF, 1 - Extra logging at important steps, 
 # 		2 - Show all commands as they are run, 3 - Expand variables
-DEBUG=2
-# Set to 1 to use linaro gcc instead of the FSF gcc
-USE_LINARO=0
+DEBUG=0
 # Set to 1 to enable building of OpenOCD
 OOCD_EN=0
 # Set to 'master' or a git revision number to use instead of stable version
@@ -135,7 +133,8 @@ OOCD=
 OOCD_GIT=master
 LIBCMSIS=
 #LIBCMSIS_GIT=v1.10-4
-LIBCMSIS_GIT=master
+#LIBCMSIS_GIT=master
+LIBCMSIS_GIT=patch-1
 LIBSTM32=
 #LIBSTM32_GIT=v3.0.0-2
 LIBSTM32_GIT=master
@@ -256,6 +255,8 @@ esac
 ##############################################################################
 # Building section
 # You probably don't have to touch anything after this
+# TODO: Break apart the individual packages into separate files.
+# TODO: Before inventing a package manager, consider Homebrew on Github.
 ##############################################################################
 
 # Fetch a versioned file from a URL
@@ -353,11 +354,6 @@ mkdir -p ${STAMPS} ${SOURCES} build.log
 
 cd ${SOURCES}
 
-#fetch ${BINUTILS} http://ftp.gnu.org/gnu/binutils/${BINUTILS}.tar.bz2
-#fetch ${GCC} ${GCCURL}
-#fetch ${NEWLIB} ftp://sourceware.org/pub/newlib/${NEWLIB}.tar.gz
-#fetch ${GDB} ${GDBURL}
-
 if [[ ${OOCD_EN} != 0 ]]; then
 	if [ "x${OOCD_GIT}" == "x" ]; then
 		fetch ${OOCD} http://sourceforge.net/projects/openocd/files/openocd/0.6.1/${OOCD}.tar.bz2
@@ -370,15 +366,13 @@ if [[ ${LIBSTM32_EN} != 0 ]]; then
 	if [ "x${LIBCMSIS_GIT}" == "x" ]; then
 		log "There is no libcmsis stable release download server yet!"
 		exit 1
-		#fetch ${LIBCMSIS} http://.../${LIBCMSIS}.tar.bz2
 	else
-		clone libcmsis ${LIBCMSIS_GIT} git://github.com/esden/libcmsis.git
+		clone libcmsis ${LIBCMSIS_GIT} git://github.com/jhgorse/libcmsis.git
 	fi
 
 	if [[ "x${LIBSTM32_GIT}" == "x" ]]; then
 		log "There is no libstm32 stable release download server yet!"
 		exit 1
-		#fetch ${LIBSTM32} http://.../${LIBSTM32}.tar.bz2
 	else
 		clone libstm32 ${LIBSTM32_GIT} git://github.com/esden/libstm32.git
 	fi
@@ -386,7 +380,6 @@ if [[ ${LIBSTM32_EN} != 0 ]]; then
 	if [[ "x${LIBSTM32USB_GIT}" == "x" ]]; then
 		log "There is no libstm32usb stable release download server yet!"
 		exit 1
-		#fetch ${LIBSTM32USB} http://.../${LIBSTM32USB}.tar.bz2
 	else
 		clone libstm32usb ${LIBSTM32USB_GIT} git://github.com/esden/libstm32usb.git
 	fi
@@ -396,7 +389,6 @@ if [[ ${LIBOPENCM3_EN} != 0 ]]; then
 	if [[ "x${LIBOPENCM3_GIT}" == "x" ]]; then
 		log "There is no libopencm3 stable release download server yet!"
 		exit 1
-		#fetch ${LIBOPENCM3} http://.../${LIBOPENCM3}.tar.bz2
 	else
 		clone libopencm3 ${LIBOPENCM3_GIT} git://github.com/libopencm3/libopencm3.git
 	fi
@@ -421,8 +413,8 @@ if [[ ! -e ${STAMPS}/${OOCD}.build ]]; then
 		echo "DEBUG OUTPUT: Configuring openocd of summon-arm-toolchain"
 		echo "From PWD=$PWD"
 		echo "CFLAGS=\"${CFLAGS} ${OOCD_CFLAGS}\" \\
-			LDFLAGS=\"${LDFLAGS} ${OOCD_LDFLAGS}\" \\
-			../${OOCD}/configure --enable-maintainer-mode \\
+	LDFLAGS=\"${LDFLAGS} ${OOCD_LDFLAGS}\" \\
+	../${OOCD}/configure --enable-maintainer-mode \\
 		--disable-option-checking \\
 		--disable-werror \\
 		--prefix=${PREFIX} \\
@@ -487,12 +479,9 @@ if [[ ! -e ${STAMPS}/${LIBCMSIS}.build ]]; then
 	make arch_prefix=${TARGET} prefix=${PREFIX}
 	install ${LIBCMSIS} arch_prefix=${TARGET} prefix=${PREFIX} install
 	cd ..
-	echo "Quitting the trial."
-	exit 1
 	log "Cleaning up ${LIBCMSIS}"
 	touch ${STAMPS}/${LIBCMSIS}.build
 	mv ${LIBCMSIS} build.log/
-#	rm -rf ${LIBCMSIS}
 fi
 
 if [[ ! -e ${STAMPS}/${LIBSTM32}.build ]]; then
@@ -507,12 +496,11 @@ if [[ ! -e ${STAMPS}/${LIBSTM32}.build ]]; then
 		echo "CFLAGS=$CFLAGS"
 	fi
 	make arch_prefix=${TARGET} prefix=${PREFIX}
-	#install ${LIBSTM32} arch_prefix=${TARGET} prefix=${PREFIX} install
+	install ${LIBSTM32} arch_prefix=${TARGET} prefix=${PREFIX} install
 	cd ..
 	log "Cleaning up ${LIBSTM32}"
 	touch ${STAMPS}/${LIBSTM32}.build
 	mv ${LIBSTM32} build.log/
-#	rm -rf ${LIBSTM32}
 fi
 
 if [[ ! -e ${STAMPS}/${LIBSTM32USB}.build ]]; then
@@ -526,20 +514,20 @@ if [[ ! -e ${STAMPS}/${LIBSTM32USB}.build ]]; then
 		echo "install ${LIBSTM32USB} arch_prefix=${TARGET} prefix=${PREFIX} install"
 	fi
 	make arch_prefix=${TARGET} prefix=${PREFIX}
-	#install ${LIBSTM32USB} arch_prefix=${TARGET} prefix=${PREFIX} install
+	install ${LIBSTM32USB} arch_prefix=${TARGET} prefix=${PREFIX} install
 	cd ..
 	log "Cleaning up ${LIBSTM32USB}"
 	touch ${STAMPS}/${LIBSTM32USB}.build
 	mv ${LIBSTM32USB} build.log/
-#	rm -rf ${LIBSTM32USB}
 fi
 fi
 
+# TODO: add 'doc' to make targets, at least for any package maintainer with doxygen/dot and tex.
 if [[ $LIBOPENCM3_EN != 0 ]]; then
 if [[ ! -e ${STAMPS}/${LIBOPENCM3}.build ]]; then
 	unpack ${LIBOPENCM3}
 	cd ${LIBOPENCM3}
-	log "Building ${LIBOPENCM3}"
+	log "Building LIBOPENCM3: ${LIBOPENCM3}"
 	if [[ ${DEBUG} -ge 1 ]] ; then
 		echo "DEBUG OUTPUT: Building LIBOPENCM3 of summon-arm-toolchain"
 		echo "From PWD=$PWD"
@@ -547,11 +535,10 @@ if [[ ! -e ${STAMPS}/${LIBOPENCM3}.build ]]; then
 		echo "install ${LIBOPENCM3} PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX} install"
 	fi
 	make PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX}
-	#install ${LIBOPENCM3} PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX} install
+	install ${LIBOPENCM3} PREFIX=${TARGET} DESTDIR=${DESTDIR}${DESTDIR:+/}${PREFIX} install
 	cd ..
 	log "Cleaning up ${LIBOPENCM3}"
 	touch ${STAMPS}/${LIBOPENCM3}.build
 	mv ${LIBOPENCM3} build.log/
-#	rm -rf ${LIBOPENCM3}
 fi
 fi

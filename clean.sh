@@ -1,3 +1,3 @@
 #!/bin/sh
 
-rm -rf build.log build stamps lib* openocd*
+rm -rf install build.log build stamps lib* openocd*
